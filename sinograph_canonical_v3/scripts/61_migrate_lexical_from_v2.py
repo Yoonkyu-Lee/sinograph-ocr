@@ -37,14 +37,26 @@ READING_TYPE_MAP = {
     "mandarin": "mandarin",
     "cantonese": "cantonese",
     "vietnamese": "vietnamese",
-    "japanese_on": "onyomi",
-    "japanese_kun": "kunyomi",
-    "korean_hangul": "dokeum",
+    # japanese_on / japanese_kun are intentionally NOT mapped — v2's Japanese
+    # readings are legacy romaji (Unihan kJapaneseOn/Kun). onyomi / kunyomi
+    # are rebuilt in kana from KANJIDIC2 + Unihan kJapanese by
+    # 67_merge_japanese.py.
+    # korean_hangul -> character_hunum table (62_merge_hunum.py).
 }
 
 # v2 variant-edge source tokens that are allowed. e-hanja MUST be the online
 # DB; the mobile DB (ejajeon) must never appear.
 ALLOWED_EDGE_SOURCES = {"unihan", "ehanja_online", "kanjidic2", "makemeahanzi"}
+
+# variant-edge relation -> category. `variant` = the two codepoints are the
+# same character (orthographic / regional / encoding variants). `semantic` =
+# different characters in a meaning relation (synonym / antonym). The app
+# shows these in separate panels. Any relation not listed defaults to
+# `variant` (the safe default — all true variant relations are explicit).
+RELATION_CATEGORY = {
+    "ehanja_synonyms": "semantic",
+    "ehanja_opposites": "semantic",
+}
 
 
 def log(msg: str) -> None:
@@ -57,7 +69,7 @@ def create_tables(dst: sqlite3.Connection) -> None:
         dst.execute(f"DROP TABLE IF EXISTS main.{name}")
     dst.execute(
         "CREATE TABLE character_readings ("
-        "codepoint TEXT, reading_type TEXT, value TEXT, pair_group INTEGER)")
+        "codepoint TEXT, reading_type TEXT, value TEXT)")
     dst.execute(
         "CREATE TABLE character_meanings ("
         "codepoint TEXT, language TEXT, value TEXT)")
@@ -65,7 +77,7 @@ def create_tables(dst: sqlite3.Connection) -> None:
         "CREATE TABLE variant_edges ("
         "source_codepoint TEXT, source_character TEXT, "
         "target_codepoint TEXT, target_character TEXT, "
-        "relation_scope TEXT, relation TEXT, "
+        "relation_scope TEXT, relation TEXT, relation_category TEXT, "
         "sources_json TEXT, support_count INTEGER)")
     dst.execute(
         "CREATE TABLE variant_family ("
@@ -88,7 +100,7 @@ def main() -> None:
 
     create_tables(dst)
 
-    # --- readings ---
+    # --- readings (non-Korean only; Korean -> character_hunum in 62) ---
     log("[61] migrating character_readings ...")
     rd_rows, skipped_rt = [], set()
     for cp, rt, val in v2.execute(
@@ -99,11 +111,12 @@ def main() -> None:
         if mapped is None:
             skipped_rt.add(rt)
             continue
-        rd_rows.append((cp, mapped, val, None))
-    dst.executemany("INSERT INTO character_readings VALUES (?,?,?,?)", rd_rows)
+        rd_rows.append((cp, mapped, val))
+    dst.executemany("INSERT INTO character_readings VALUES (?,?,?)", rd_rows)
     log(f"[61]   readings: {len(rd_rows):,} rows")
     if skipped_rt:
-        log(f"[61]   (note: unmapped reading_type skipped: {sorted(skipped_rt)})")
+        log(f"[61]   (skipped non-migrated reading_type {sorted(skipped_rt)} "
+            f"— korean_hangul->62, japanese_on/kun->67)")
     for rt in sorted(set(READING_TYPE_MAP.values())):
         n = dst.execute("SELECT count(DISTINCT codepoint) FROM character_readings "
                          "WHERE reading_type=?", (rt,)).fetchone()[0]
@@ -133,15 +146,18 @@ def main() -> None:
             continue
         for tok in json.loads(sj):
             all_tokens.add(tok)
-        edge_rows.append((scp, sch, tcp, tch, scope, rel, sj, supp))
+        category = RELATION_CATEGORY.get(rel, "variant")
+        edge_rows.append((scp, sch, tcp, tch, scope, rel, category, sj, supp))
     # provenance assert — e-hanja must be the online DB, never mobile.
     bad = all_tokens - ALLOWED_EDGE_SOURCES
     if bad or any("ejajeon" in t or "mobile" in t for t in all_tokens):
         raise SystemExit(f"[61] FAIL — unexpected edge source token(s): {bad}")
-    dst.executemany("INSERT INTO variant_edges VALUES (?,?,?,?,?,?,?,?)", edge_rows)
+    dst.executemany(
+        "INSERT INTO variant_edges VALUES (?,?,?,?,?,?,?,?,?)", edge_rows)
+    n_semantic = sum(1 for e in edge_rows if e[6] == "semantic")
     log(f"[61]   edges: {len(edge_rows):,} rows  "
-        f"(dropped {dropped_edges:,} with out-of-universe target; "
-        f"source tokens verified: {sorted(all_tokens)})")
+        f"({n_semantic:,} semantic-relation, rest variant; "
+        f"dropped {dropped_edges:,} with out-of-universe target)")
 
     # --- variant_family (enriched graph: Unihan + e-hanja schoolCom) ---
     # Family members are closed over the v3 universe: out-of-universe members
@@ -179,6 +195,7 @@ def main() -> None:
     dst.execute("CREATE INDEX idx_readings_cp ON character_readings(codepoint)")
     dst.execute("CREATE INDEX idx_meanings_cp ON character_meanings(codepoint)")
     dst.execute("CREATE INDEX idx_edges_src ON variant_edges(source_codepoint)")
+    dst.execute("CREATE INDEX idx_edges_tgt ON variant_edges(target_codepoint)")
     dst.execute("CREATE INDEX idx_family_fid ON variant_family(family_id)")
 
     dst.commit()

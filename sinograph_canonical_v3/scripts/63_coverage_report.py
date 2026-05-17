@@ -70,12 +70,16 @@ def main() -> None:
             ("vietnamese", cp_count(
                 "SELECT count(DISTINCT codepoint) FROM character_readings "
                 "WHERE reading_type='vietnamese'")),
-            ("dokeum (한국 독음)", cp_count(
-                "SELECT count(DISTINCT codepoint) FROM character_readings "
-                "WHERE reading_type='dokeum'")),
-            ("jahun (한국 자훈)", cp_count(
-                "SELECT count(DISTINCT codepoint) FROM character_readings "
-                "WHERE reading_type='jahun'")),
+        ]),
+        ("훈음 (Korean, character_hunum)", [
+            ("any 훈음", cp_count(
+                "SELECT count(DISTINCT codepoint) FROM character_hunum")),
+            ("dokeum (독음)", cp_count(
+                "SELECT count(DISTINCT codepoint) FROM character_hunum "
+                "WHERE dokeum IS NOT NULL")),
+            ("jahun (자훈)", cp_count(
+                "SELECT count(DISTINCT codepoint) FROM character_hunum "
+                "WHERE jahun IS NOT NULL")),
         ]),
         ("뜻 (meanings)", [
             ("any meaning", cp_count(
@@ -90,6 +94,12 @@ def main() -> None:
         ("이체자 (variants)", [
             ("variant edge (as source)", cp_count(
                 "SELECT count(DISTINCT source_codepoint) FROM variant_edges")),
+            ("  of which true variant", cp_count(
+                "SELECT count(DISTINCT source_codepoint) FROM variant_edges "
+                "WHERE relation_category='variant'")),
+            ("  of which semantic rel.", cp_count(
+                "SELECT count(DISTINCT source_codepoint) FROM variant_edges "
+                "WHERE relation_category='semantic'")),
             ("family member 2+", cp_count(
                 "SELECT count(*) FROM variant_family WHERE component_size>1")),
         ]),
@@ -111,20 +121,20 @@ def main() -> None:
                 "empty_pct": round(empty, 2)}
 
     # table row totals
-    rd_rows = db.execute("SELECT count(*) FROM character_readings").fetchone()[0]
-    mn_rows = db.execute("SELECT count(*) FROM character_meanings").fetchone()[0]
-    ed_rows = db.execute("SELECT count(*) FROM variant_edges").fetchone()[0]
-    fam_rows = db.execute("SELECT count(*) FROM variant_family").fetchone()[0]
+    def rows(t: str) -> int:
+        return db.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+
     report["table_rows"] = {
         "characters_ids": n,
-        "characters_structure": db.execute(
-            "SELECT count(*) FROM characters_structure").fetchone()[0],
-        "characters_core": db.execute(
-            "SELECT count(*) FROM characters_core").fetchone()[0],
-        "character_readings": rd_rows,
-        "character_meanings": mn_rows,
-        "variant_edges": ed_rows,
-        "variant_family": fam_rows,
+        "characters_structure": rows("characters_structure"),
+        "characters_core": rows("characters_core"),
+        "character_readings": rows("character_readings"),
+        "character_hunum": rows("character_hunum"),
+        "character_meanings": rows("character_meanings"),
+        "variant_edges": rows("variant_edges"),
+        "variant_family": rows("variant_family"),
+        "radicals": rows("radicals"),
+        "fts_search": rows("fts_search"),
     }
     log("\n  [table row counts]")
     for t, c in report["table_rows"].items():

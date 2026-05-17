@@ -58,28 +58,32 @@ def fetch(db: sqlite3.Connection, cp: str) -> dict:
     st = db.execute(
         "SELECT radical_idx, total_strokes, residual_strokes "
         "FROM characters_structure WHERE codepoint=?", (cp,)).fetchone()
-    out["structure"] = (
-        {"radical_idx": st[0], "total_strokes": st[1],
-         "residual_strokes": st[2]} if st else None)
+    if st:
+        rad = db.execute(
+            "SELECT char, name_ko FROM radicals WHERE radical_idx=?",
+            (st[0],)).fetchone() if st[0] else None
+        out["structure"] = {
+            "radical_idx": st[0], "total_strokes": st[1],
+            "residual_strokes": st[2],
+            "radical_char": rad[0] if rad else None,
+            "radical_name": rad[1] if rad else None}
+    else:
+        out["structure"] = None
 
-    # readings — split into 훈음 pairs and plain readings
+    # readings — five non-Korean languages
     by_type: dict[str, list[str]] = defaultdict(list)
-    pairs: dict[int, dict] = defaultdict(dict)
-    dokeum_solo: list[str] = []
-    for rt, val, grp in db.execute(
-            "SELECT reading_type, value, pair_group FROM character_readings "
-            "WHERE codepoint=? ORDER BY pair_group, rowid", (cp,)):
-        if rt in ("jahun", "dokeum") and grp is not None:
-            pairs[grp][rt] = val
-        elif rt == "dokeum":
-            dokeum_solo.append(val)
-        else:
-            by_type[rt].append(val)
-    out["hunum"] = [
-        {"jahun": pairs[g].get("jahun", ""), "dokeum": pairs[g].get("dokeum", "")}
-        for g in sorted(pairs)]
-    out["dokeum_unpaired"] = dokeum_solo
+    for rt, val in db.execute(
+            "SELECT reading_type, value FROM character_readings "
+            "WHERE codepoint=? ORDER BY rowid", (cp,)):
+        by_type[rt].append(val)
     out["readings"] = {rt: by_type[rt] for rt, _ in READING_LABELS if by_type[rt]}
+
+    # Korean 훈음 — (자훈, 독음) pairs from character_hunum
+    out["hunum"] = [
+        {"seq": seq, "jahun": jahun, "dokeum": dokeum}
+        for seq, jahun, dokeum in db.execute(
+            "SELECT seq, jahun, dokeum FROM character_hunum "
+            "WHERE codepoint=? ORDER BY seq", (cp,))]
 
     meanings: dict[str, list[str]] = defaultdict(list)
     for lang, val in db.execute(
@@ -97,12 +101,13 @@ def fetch(db: sqlite3.Connection, cp: str) -> dict:
         if fam else None)
 
     edges = []
-    for tcp, tch, scope, rel in db.execute(
-            "SELECT target_codepoint, target_character, relation_scope, relation "
-            "FROM variant_edges WHERE source_codepoint=? ORDER BY relation_scope",
+    for tcp, tch, scope, rel, cat in db.execute(
+            "SELECT target_codepoint, target_character, relation_scope, "
+            "relation, relation_category FROM variant_edges "
+            "WHERE source_codepoint=? ORDER BY relation_category, relation",
             (cp,)):
         edges.append({"target": tch, "target_codepoint": tcp,
-                      "scope": scope, "relation": rel})
+                      "scope": scope, "relation": rel, "category": cat})
     out["variant_edges"] = edges
     return out
 
@@ -129,21 +134,25 @@ def pretty(d: dict) -> None:
               f"(top-IDC {d['ids']['top_idc']})")
     if d["structure"]:
         s = d["structure"]
-        print(f"  부수       : {s['radical_idx']}   "
+        rad = str(s["radical_idx"])
+        if s.get("radical_char"):
+            rad += f" {s['radical_char']}"
+        if s.get("radical_name"):
+            rad += f" ({s['radical_name']})"
+        print(f"  부수       : {rad}   "
               f"총획 {s['total_strokes']}   잔여획 {s['residual_strokes']}")
 
     print("  [발음]")
     if d["hunum"]:
         shown = ", ".join(
-            f"{h['jahun']} {h['dokeum']}".strip() for h in d["hunum"])
+            (f"{h['jahun']} {h['dokeum']}" if h["jahun"] else h["dokeum"])
+            for h in d["hunum"])
         print(f"  한국 훈음  : {shown}")
-    elif d["dokeum_unpaired"]:
-        print(f"  한국 독음  : {' / '.join(d['dokeum_unpaired'])}")
     for rt, label in READING_LABELS:
         vals = d["readings"].get(rt)
         if vals:
             print(f"  {_pad(label, 11)}: {' / '.join(vals)}")
-    if not d["hunum"] and not d["dokeum_unpaired"] and not d["readings"]:
+    if not d["hunum"] and not d["readings"]:
         print("  (발음 정보 없음)")
 
     print("  [뜻]")
@@ -155,16 +164,23 @@ def pretty(d: dict) -> None:
         print("  (뜻 정보 없음)")
 
     print("  [이체자]")
-    if d["family"] and d["family"]["size"] > 1:
+    has_family = d["family"] and d["family"]["size"] > 1
+    if has_family:
         members = " ".join(
             chr(int(m[2:], 16)) for m in d["family"]["members"]
             if int(m[2:], 16) < 0x110000)
         print(f"  family ({d['family']['size']}) : {members}")
-    if d["variant_edges"]:
+    variants = [e for e in d["variant_edges"] if e["category"] == "variant"]
+    related = [e for e in d["variant_edges"] if e["category"] == "semantic"]
+    if variants:
         rels = ", ".join(
-            f"{e['target']} [{e['relation']}]" for e in d["variant_edges"])
-        print(f"  관계       : {rels}")
-    if not (d["family"] and d["family"]["size"] > 1) and not d["variant_edges"]:
+            f"{e['target']} [{e['relation']}]" for e in variants)
+        print(f"  이체관계   : {rels}")
+    if related:
+        rels = ", ".join(
+            f"{e['target']} [{e['relation']}]" for e in related)
+        print(f"  관련어     : {rels}")
+    if not has_family and not d["variant_edges"]:
         print("  (이체자 정보 없음)")
 
 

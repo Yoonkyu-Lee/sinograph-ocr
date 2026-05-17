@@ -1,18 +1,21 @@
-"""canonical_v3 completion — step 3: merge Korean 훈음 (자훈 + 독음).
+"""canonical_v3 completion — step 3: build the character_hunum table.
 
-canonical_v2 carried only the Korean reading syllable (독음). It dropped the
-자훈 — the native-Korean gloss word that pairs with it. e-hanja online keeps
-both in `tree.jsonl` getHunum.
+Korean hanja readings are 자훈(訓: the native-Korean gloss, "거울") + 독음
+(音: the Sino-Korean syllable, "감"). Unlike the other languages these two
+form a pair, so they get their own table instead of being squeezed into
+character_readings with a nullable pair_group.
 
-getHunum[].hRead format: `"기운 뻗칠 하, 꾸짖을 가"` — comma-separated 훈음
-entries, each `"<자훈 ...> <독음>"`. The last whitespace token is the 독음,
-the rest is the 자훈.
+`character_hunum(codepoint, seq, jahun, dokeum)`:
+  - one row per 훈음 pair, `seq` ordering them (行 -> seq0 다닐/행, seq1 항렬/항)
+  - `jahun` is nullable: codepoints with only a 독음 (no e-hanja getHunum)
+    get a row with jahun = NULL
+  - `dokeum` is always present
 
-For every codepoint with a usable getHunum, this script:
-  - replaces v2's unpaired `dokeum` rows with the getHunum-derived pair,
-  - adds `jahun` rows,
-  - ties 자훈 <-> 독음 with a shared `pair_group` (0, 1, ...).
-Codepoints without getHunum keep v2's `dokeum` rows untouched.
+Sources:
+  - e-hanja online tree.jsonl getHunum -> paired (자훈, 독음)
+  - canonical_v2 korean_hangul -> 독음 for codepoints with no getHunum
+
+Idempotent: the table is dropped and rebuilt on every run.
 
 Run (after 61_migrate_lexical_from_v2.py):
   python sinograph_canonical_v3/scripts/62_merge_hunum.py
@@ -29,6 +32,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 ROOT = Path(__file__).resolve().parents[2]
 DST_DB = ROOT / "sinograph_canonical_v3" / "out" / "canonical_v3.sqlite"
+V2_DB = ROOT / "sinograph_canonical_v2" / "out" / "sinograph_canonical_v2.sqlite"
 TREE_JSONL = ROOT / "db_src" / "e-hanja_online" / "tree.jsonl"
 
 
@@ -57,14 +61,16 @@ def parse_hread(hread: str) -> list[tuple[str, str]]:
 def main() -> None:
     if not DST_DB.exists():
         raise SystemExit(f"[62] run 60/61 first — not found: {DST_DB}")
-    if not TREE_JSONL.exists():
-        raise SystemExit(f"[62] not found: {TREE_JSONL}")
+    for p in (V2_DB, TREE_JSONL):
+        if not p.exists():
+            raise SystemExit(f"[62] not found: {p}")
 
     dst = sqlite3.connect(DST_DB)
+    v2 = sqlite3.connect(f"file:{V2_DB}?mode=ro", uri=True)
     universe = {r[0] for r in dst.execute("SELECT codepoint FROM characters_ids")}
     log(f"[62] v3 universe: {len(universe):,} codepoints")
 
-    # cp -> ordered, de-duplicated list of (jahun, dokeum) pairs
+    # 1. e-hanja getHunum -> ordered, de-duplicated (jahun, dokeum) pairs
     log(f"[62] parsing getHunum from {TREE_JSONL.name} ...")
     hunum: dict[str, list[tuple[str, str]]] = {}
     scanned = 0
@@ -86,46 +92,46 @@ def main() -> None:
                         pairs.append(pair)
             if pairs:
                 hunum[cp] = pairs
-    total_pairs = sum(len(v) for v in hunum.values())
-    log(f"[62]   scanned {scanned:,} tree rows")
-    log(f"[62]   codepoints with usable 훈음: {len(hunum):,}")
-    log(f"[62]   total 훈음 pairs: {total_pairs:,}")
+    log(f"[62]   scanned {scanned:,} tree rows; "
+        f"{len(hunum):,} codepoints with 훈음 pairs")
 
-    # Replace the Korean hunum slice for these codepoints. Both jahun and
-    # dokeum are deleted (not just dokeum) so a rerun is idempotent — the
-    # previous run's jahun rows are cleared before re-insertion. Codepoints
-    # with no getHunum keep v2's unpaired dokeum untouched.
-    log("[62] replacing jahun + dokeum for hunum codepoints ...")
-    dst.executemany(
-        "DELETE FROM character_readings "
-        "WHERE reading_type IN ('jahun', 'dokeum') AND codepoint=?",
-        [(cp,) for cp in hunum])
+    # 2. v2 korean_hangul (독음) — used only for codepoints with no getHunum
+    v2_dokeum: dict[str, list[str]] = {}
+    for cp, val in v2.execute(
+            "SELECT codepoint, value FROM character_readings "
+            "WHERE reading_type='korean_hangul'"):
+        if cp in universe and cp not in hunum:
+            v2_dokeum.setdefault(cp, [])
+            if val not in v2_dokeum[cp]:
+                v2_dokeum[cp].append(val)
+    log(f"[62]   {len(v2_dokeum):,} extra codepoints with 독음 only (no getHunum)")
 
-    new_rows = []
+    # 3. build the table
+    log("[62] building character_hunum ...")
+    dst.execute("DROP TABLE IF EXISTS main.character_hunum")
+    dst.execute(
+        "CREATE TABLE character_hunum ("
+        "codepoint TEXT, seq INTEGER, jahun TEXT, dokeum TEXT)")
+    rows = []
     for cp, pairs in hunum.items():
-        for grp, (jahun, dokeum) in enumerate(pairs):
-            if jahun:
-                new_rows.append((cp, "jahun", jahun, grp))
-            if dokeum:
-                new_rows.append((cp, "dokeum", dokeum, grp))
-    dst.executemany("INSERT INTO character_readings VALUES (?,?,?,?)", new_rows)
-
+        for seq, (jahun, dokeum) in enumerate(pairs):
+            rows.append((cp, seq, jahun or None, dokeum))
+    for cp, dokeums in v2_dokeum.items():
+        for seq, dokeum in enumerate(dokeums):
+            rows.append((cp, seq, None, dokeum))
+    dst.executemany("INSERT INTO character_hunum VALUES (?,?,?,?)", rows)
+    dst.execute("CREATE INDEX idx_hunum_cp ON character_hunum(codepoint)")
     dst.commit()
 
-    jahun_cp = dst.execute(
-        "SELECT count(DISTINCT codepoint) FROM character_readings "
-        "WHERE reading_type='jahun'").fetchone()[0]
-    dokeum_cp = dst.execute(
-        "SELECT count(DISTINCT codepoint) FROM character_readings "
-        "WHERE reading_type='dokeum'").fetchone()[0]
-    dokeum_paired = dst.execute(
-        "SELECT count(DISTINCT codepoint) FROM character_readings "
-        "WHERE reading_type='dokeum' AND pair_group IS NOT NULL").fetchone()[0]
-    log(f"[62]   inserted {len(new_rows):,} rows")
-    log(f"[62]   jahun  : {jahun_cp:,} codepoints")
-    log(f"[62]   dokeum : {dokeum_cp:,} codepoints "
-        f"({dokeum_paired:,} now paired with 자훈, rest from v2)")
+    cps = dst.execute(
+        "SELECT count(DISTINCT codepoint) FROM character_hunum").fetchone()[0]
+    with_jahun = dst.execute(
+        "SELECT count(DISTINCT codepoint) FROM character_hunum "
+        "WHERE jahun IS NOT NULL").fetchone()[0]
+    log(f"[62]   character_hunum: {len(rows):,} rows, {cps:,} codepoints "
+        f"({with_jahun:,} with 자훈)")
 
+    v2.close()
     dst.close()
     log(f"[62] done: {DST_DB.name}")
 

@@ -1,27 +1,60 @@
 # canonical_v3 Build Status
 
-작성일: 2026-04-23 초기.
-이 문서는 **실제 병합 수행 기록 + 현재 구축 상태**를 담는다. 계획 /
-우선순위 / 결정 사항은 [doc/17_CANONICAL_V3_PLAN.md](../doc/17_CANONICAL_V3_PLAN.md)
-참조.
+작성일: 2026-04-23 초기, 2026-05-17 전면 갱신.
+
+이 문서는 canonical_v3 의 **실제 빌드 수행 기록 + 현재 구축 상태**를 담는다.
+canonical_v3 는 처음에 한자 인식 모델의 학습 보조 레이블용으로 시작했고
+(IDS 분해 / 부수 / 획수), lab3 종료 후 **사전 앱 백엔드**로 확장돼 발음·뜻·
+이체자·한국 훈음과 검색 레이어까지 갖췄다.
+
+- 계획 / 우선순위: [doc/17_CANONICAL_V3_PLAN.md](../doc/17_CANONICAL_V3_PLAN.md)
+- lexical 완성 (Stage 3): [doc/36_CANONICAL_V3_COMPLETION.md](../doc/36_CANONICAL_V3_COMPLETION.md)
+- 앱 레이어 정리 (Stage 4) + 최종 스키마: [doc/37_CANONICAL_V3_APP_LAYER.md](../doc/37_CANONICAL_V3_APP_LAYER.md)
+
+이 문서의 §2-§8 은 Stage 1-2 (IDS 병합 + 구조 레이블) 의 상세 기록이며
+여전히 유효하다. Stage 3-4 요약은 §9.
 
 ---
 
 ## 1. 빌드 현황 요약
 
-| Table / Field | Rows | 빌더 | 상태 |
-|---|---:|---|---|
-| `characters_ids` | 103,046 | `scripts/30_build_ids_table.py` → `32_reselect_primary_ehanja.py` | ✅ Phase 1 |
-| `characters_ids.ehanja_*` | 103,046 | `scripts/31_merge_ehanja_components.py` | ✅ Phase 1 |
-| `characters_structure` (radical / total_strokes / residual_strokes) | 103,046 | `scripts/35_build_structure_table.py` | ✅ Phase 1 |
-| `characters_family` | — | 미구현 | 계획 |
-| `characters_readings` | — | 미구현 | 계획 |
-| `characters_meanings` | — | 미구현 | 계획 |
-| `characters_aux_index` (etym / cangjie / …) | — | 미구현 | Phase 2 보류 |
-| `characters_stroke_level` | — | 미구현 | Phase 3 |
+산출 DB 2개 (universe = 103,046 codepoint):
 
-**현재 학습 Level A 에 필요한 aux label 전체 완료** (radical + stroke +
-residual + ids_top_idc 의 4 head label, 103k 의 99.9%+ coverage).
+- `out/ids_merged.sqlite` (43 MB) — IDS 병합 중간물. `characters_ids` +
+  `characters_structure` 2 테이블. Stage 1-2 산출.
+- `out/canonical_v3.sqlite` (94 MB) — **최종 사전 DB**. 아래 10 테이블 +
+  1 VIEW. Stage 3-4 산출.
+
+빌드는 4 스테이지 — 전부 ✅ 완료:
+
+| Stage | 산출 | 스크립트 | 문서 |
+|---|---|---|---|
+| 1. IDS 병합 | `characters_ids` | 30 → 31 → 32 → 31 | §2-§7 |
+| 2. 구조 레이블 | `characters_structure` | 35 | §8 |
+| 3. lexical 완성 | readings / meanings / variants / hunum | 60 → 61 → 62 | doc/36 |
+| 4. 앱 레이어 정리 | 훈음 분리 / 일본발음 가나 재병합 / radicals / FTS / summary VIEW | 67 → 65 → 66 | doc/37 |
+
+`canonical_v3.sqlite` 최종 테이블:
+
+| 테이블 | rows | 내용 | Stage |
+|---|---:|---|:--:|
+| `characters_ids` | 103,046 | IDS 분해 / top-IDC / 소스 합의 | 1 |
+| `characters_structure` | 103,046 | 부수 / 총획 / 잔여획 | 2 |
+| `characters_core` | 103,046 | codepoint / 글자 / Unicode block | 3 |
+| `character_readings` | 197,220 | 발음 비한국어 5종 (mandarin / cantonese / onyomi / kunyomi / vietnamese) — 일본발음은 가나 | 3-4 |
+| `character_hunum` | 83,650 | 한국 훈음 — 자훈(訓) + 독음(音) 페어 | 3-4 |
+| `character_meanings` | 195,221 | 뜻 (en / ko) | 3 |
+| `variant_edges` | 88,704 | 이체자 edge + `relation_category` | 3-4 |
+| `variant_family` | 103,006 | 이체자 family (enriched 그래프) | 3 |
+| `radicals` | 214 | 부수표 — idx / 부수자 / 한글명 / 획수 | 4 |
+| `fts_search` | 80,020 | FTS5 역검색 (뜻·발음·훈 → 한자) | 4 |
+| `character_summary` (VIEW) | 103,046 | 단일 글자 요약 fetch | 4 |
+
+스키마 상세는 doc/37 §2. **미구현 (다음 phase)**: `characters_stroke_level`
+(획순 / per-stroke), etymology (자원 — 형성·회의·상형), 단어/숙어 레이어.
+
+학습 측면: radical / total_strokes / residual_strokes / ids_top_idc 의 4
+head aux label 은 Stage 1-2 에서 완료 (103k 의 99.9%+).
 
 ---
 
@@ -558,20 +591,88 @@ ids_top_idc       : 100.00%  (이미 characters_ids 에 존재)
 
 ---
 
-## 9. 재현 명령
+## 9. Stage 3-4 — lexical 완성 + 앱 레이어 (2026-05-17)
+
+Stage 1-2 (`ids_merged.sqlite`) 는 학습 aux label 까지만 담았다. lab3 종료
+후 목표가 사전 앱으로 바뀌면서, 화면에 보여줄 발음·뜻·이체자·훈음을 채우고
+(Stage 3) 스키마를 앱 친화적으로 정리했다 (Stage 4).
+
+### 9.1 Stage 3 — lexical 완성 (doc/36)
+
+발음·뜻·이체자는 이미 canonical_v2 가 db_src (Unihan / e-hanja online /
+KANJIDIC2 / MMH) 를 병합해 보유하므로, **새 발굴이 아니라 v2 → v3 universe
+이식**이다.
+
+- `60_init_canonical_v3.py` — `ids_merged.sqlite` 의 구조 2테이블을 새
+  `canonical_v3.sqlite` 로 복사 + `characters_core` 생성.
+- `61_migrate_lexical_from_v2.py` — v2 의 readings / meanings / variant
+  graph 를 v3 universe 로 이식. variant edge·family 는 universe 안에서
+  닫음 (out-of-universe target 18 / family member 89 제거).
+- `62_merge_hunum.py` — e-hanja online getHunum 파싱으로 한국 훈음 추가.
+
+출처 검증: variant graph 의 e-hanja 부분은 **online DB 만** 사용
+(`tree.jsonl` + `detail.jsonl`). mobile DB (`ejajeon_plain.db`) 미참조 —
+`61` 이 `sources_json` 토큰을 assert 로 확인.
+
+### 9.2 Stage 4 — 앱 레이어 정리 (doc/37)
+
+Codex adversarial review + 자체 구조 점검 결과 반영:
+
+- 한국 훈음을 전용 `character_hunum(codepoint, seq, jahun, dokeum)` 테이블로
+  분리 — 자훈↔독음 페어가 행으로 명시됨. `character_readings` 는 비한국어
+  5종만.
+- **일본 발음 가나 재병합** (`67_merge_japanese.py`) — v2 가 쓰던 Unihan
+  레거시 로마자 필드 (`kJapaneseOn/Kun`, 13%) 를 버리고 KANJIDIC2 가나 +
+  Unihan `kJapanese` (가나) 로 `onyomi`/`kunyomi` 재구축. 커버리지 13% →
+  50%, 표기 100% 가나. doc/37 §8.
+- `radicals` 부수표 (e-hanja `detail.jsonl` radical.char/name), `fts_search`
+  FTS5 역검색, `character_summary` VIEW 추가.
+- `variant_edges.relation_category` — `variant` (진짜 이체자) vs `semantic`
+  (유의·반의) 구분.
+- `62` / `67` 멱등화 (테이블/행 DROP 후 재생성).
+
+### 9.3 무결성 / 커버리지
+
+`64_validate_canonical_v3.py` 24종 체크 — universe 폐쇄, 중복 행, 훈음
+정합, 일본발음 가나, orphan, FTS·VIEW 등 — 전부 PASS. 커버리지 원본:
+`out/canonical_v3_coverage.json`.
+
+| 항목 | 커버리지 (universe 103,046) |
+|---|---:|
+| 구조 (부수 / 획수 / IDS) | 99.9%+ |
+| 발음 비한국어 (하나라도) | 63.4% (일본 음독 48.8%) |
+| 한국 독음 / 자훈 | 73.5% / 50.6% |
+| 뜻 (하나라도) | 74.5% |
+| 이체자 edge 보유 | 41.9% |
+
+빈 ~25% 는 Ext G/H/I/J 희귀·역사 한자로 원천 소스 (Unihan / e-hanja 등)
+의 커버리지 한계 — 재병합으로도 못 채운다.
+
+---
+
+## 10. 재현 명령
 
 ```bash
-# IDS 병합 체인
+# Stage 1-2 — ids_merged.sqlite (IDS 병합 + 구조 레이블)
 python sinograph_canonical_v3/scripts/30_build_ids_table.py
 python sinograph_canonical_v3/scripts/31_merge_ehanja_components.py
 python sinograph_canonical_v3/scripts/32_reselect_primary_ehanja.py
 python sinograph_canonical_v3/scripts/31_merge_ehanja_components.py  # rerun
-
-# Structure table
 python sinograph_canonical_v3/scripts/35_build_structure_table.py
 
-# Lookup
-python sinograph_canonical_v3/scripts/40_lookup.py --char 鑑
+# Stage 3-4 — canonical_v3.sqlite (실행 순서, 번호 != 실행순)
+python sinograph_canonical_v3/scripts/60_init_canonical_v3.py
+python sinograph_canonical_v3/scripts/61_migrate_lexical_from_v2.py
+python sinograph_canonical_v3/scripts/62_merge_hunum.py
+python sinograph_canonical_v3/scripts/67_merge_japanese.py
+python sinograph_canonical_v3/scripts/65_build_radicals.py
+python sinograph_canonical_v3/scripts/66_build_app_layer.py
+python sinograph_canonical_v3/scripts/63_coverage_report.py
+python sinograph_canonical_v3/scripts/64_validate_canonical_v3.py
+
+# 조회
+python sinograph_canonical_v3/scripts/40_lookup.py --char 鑑       # 구조 전용
+python sinograph_canonical_v3/scripts/42_lookup_full.py --char 鑑  # 전체 사전
 ```
 
 ---
@@ -579,6 +680,8 @@ python sinograph_canonical_v3/scripts/40_lookup.py --char 鑑
 ## 관련 문서
 
 - [doc/17_CANONICAL_V3_PLAN.md](../doc/17_CANONICAL_V3_PLAN.md) — 계획 / 우선순위
+- [doc/36_CANONICAL_V3_COMPLETION.md](../doc/36_CANONICAL_V3_COMPLETION.md) — Stage 3 lexical 완성
+- [doc/37_CANONICAL_V3_APP_LAYER.md](../doc/37_CANONICAL_V3_APP_LAYER.md) — Stage 4 앱 레이어 + 최종 스키마
 - [db_src/BABELSTONE_IDS_MANUAL.md](../db_src/BABELSTONE_IDS_MANUAL.md)
 - [db_src/CHISE_IDS_MANUAL.md](../db_src/CHISE_IDS_MANUAL.md)
 - [db_src/CJKVI_IDS_MANUAL.md](../db_src/CJKVI_IDS_MANUAL.md)

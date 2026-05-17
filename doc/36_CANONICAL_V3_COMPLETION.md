@@ -4,6 +4,11 @@
 이전 문서: [17_CANONICAL_V3_PLAN.md](17_CANONICAL_V3_PLAN.md),
 [../sinograph_canonical_v3/BUILD_STATUS.md](../sinograph_canonical_v3/BUILD_STATUS.md).
 
+> **갱신 (2026-05-17)**: 이후 "앱 진입 전 정리" 로 스키마가 바뀌었다 (한국
+> 훈음 분리, radicals / fts_search / character_summary 추가 등). **최종
+> 스키마는 [37_CANONICAL_V3_APP_LAYER.md](37_CANONICAL_V3_APP_LAYER.md) §2
+> 참조** — 아래 §3 스키마는 정리 이전 상태다.
+
 ## 0. 배경
 
 lab3 최종 시연 목표는 한자 인식 모델 완성뿐이었다. 그래서 canonical_v3 는
