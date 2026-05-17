@@ -1,3 +1,45 @@
+# Report Writing 지침 (현재 활성화)
+
+리포트 작성 / 수정 시 다음 제약을 따른다.
+
+## 목표 톤
+- Non-native graduate / upper-undergrad student
+- Technical academic report tone
+- Clear and direct, but with natural sentence flow
+- CEFR B2-C1 어휘 (no GRE-level: delve, leverage, intricate, nuanced, multifaceted, paradigm 등 금지)
+
+## 문장 구조
+- 평균 18-25 단어 (variation 중요: 짧은 문장과 중간 길이 섞기)
+- 관련 아이디어는 because / since / while / although / which 등으로 묶을 것
+- 같은 주어로 시작하는 짧은 문장 3개 이상 연속 금지
+  예: "I do X. I do Y. I do Z." → 합칠 것
+- 리스트성 항목은 콜론(`:`)으로 본문에 자연스럽게 통합
+
+## Voice 비율
+- Active voice 는 전체 문장의 20-30 % 만
+- Active voice 를 쓰는 경우 (제한적):
+  - 저자의 의도 / 판단 / 선택 명시: "I argue that...", "I chose X because...", "I do not claim..."
+  - 리포트 구조 안내: "Section 3 presents...", "This report focuses on..."
+- 나머지는 passive 또는 무생물 주어:
+  - 시스템 / 방법 / 컴포넌트가 주어: "ResNet-18 is used as the backbone", "The embeddings are L2-normalized"
+  - "I use X" → "X is used"
+  - "I trained the model on Y" → "The model was trained on Y"
+
+## 금지
+- 엠대시 (`—`), 세미콜론 (`;`)
+- "It's not just X, it's Y" 같은 AI 식 대조
+- "tapestry, navigate, foster, robust" 같은 marketing-ish 단어
+- 불필요한 tricolon (3개 병렬로 묶어서 rhetorical 하게 마무리하는 패턴)
+- "I do not introduce", "I do not invent" 같은 연속된 "I do not X" 패턴 → "No new X is proposed" 또는 "This work does not propose X" 로
+- 한 문단에 "I" 로 시작하는 문장 2개 초과 금지
+
+## 허용
+- 1인칭 (I, we) 사용 OK (위 voice 비율 안에서)
+- 기술 용어, 약어, 고유명사는 자연스럽게 사용
+- 가벼운 반복 OK
+
+---
+
 # 프로젝트 규칙
 
 ## 현재 phase (2026-04-28 기준)
