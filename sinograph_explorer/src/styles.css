@@ -80,6 +80,15 @@ body {
 .searchbar button:hover {
   background: #284838;
 }
+.searchbar button.recognize-btn {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  white-space: nowrap;
+}
+.searchbar button.recognize-btn:hover {
+  background: #d6e4d8;
+}
 
 .crumb {
   display: flex;
@@ -281,20 +290,27 @@ body {
   font-family: Consolas, monospace;
 }
 
-/* hunum */
-.hunum-list {
-  margin: 0;
-  padding-left: 18px;
-}
-.hunum-list li {
-  padding: 2px 0;
+/* hunum — 자훈(훈) 독음(음) pair, shown in the 발음 panel */
+.hunum-v {
+  font-size: 15px;
 }
 .jahun {
-  color: var(--ink);
+  color: var(--muted);
 }
 .dokeum {
   font-weight: 600;
   color: var(--accent);
+}
+.rk-tag {
+  font-size: 0.58em;
+  color: var(--muted);
+  vertical-align: sub;
+  margin-left: 1px;
+  font-weight: 400;
+}
+.pair-sep {
+  color: var(--line);
+  margin: 0 2px;
 }
 
 /* ---- home screen ---- */
@@ -422,4 +438,43 @@ body {
   font-size: 10px;
   color: var(--muted);
   font-family: Consolas, monospace;
+}
+
+/* ---- variant graph ---- */
+.graph-btn-wrap {
+  margin-top: 8px;
+}
+.graph-btn {
+  border: 1px solid var(--line);
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.graph-btn:hover {
+  border-color: var(--accent);
+}
+.graph-section {
+  margin-top: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.graph-head {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+.cy {
+  width: 100%;
+  height: 420px;
+  background: #fbfaf6;
+  border-radius: 6px;
 }

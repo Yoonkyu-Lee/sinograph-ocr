@@ -5,11 +5,14 @@
 //! Two commands are exposed: `lookup` (one character -> full entry) and
 //! `search` (FTS5 reverse lookup by meaning / reading).
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
+
+pub mod recognize;
+use recognize::{Candidate, Recognizer};
 
 /// Managed state — the single read-only connection to canonical_v3.sqlite.
 struct Db(Mutex<Connection>);
@@ -46,6 +49,13 @@ struct Readings {
 #[derive(Serialize)]
 struct Hunum {
     seq: i64,
+    jahun: Option<String>,
+    dokeum: String,
+}
+
+/// A 자훈 / 독음 pair without the sequence index — used for the daily card.
+#[derive(Serialize)]
+struct HunumPair {
     jahun: Option<String>,
     dokeum: String,
 }
@@ -133,7 +143,7 @@ struct DailyChar {
     codepoint: String,
     character: String,
     gloss: String,
-    hunum: Option<String>,
+    hunum: Option<HunumPair>,
     primary_ids: Option<String>,
     total_strokes: Option<i64>,
 }
@@ -504,6 +514,106 @@ fn search(db: State<Db>, query: String, limit: i64) -> Result<Vec<SearchHit>, St
     Ok(hits)
 }
 
+// ---------- variant graph ----------
+
+#[derive(Serialize)]
+struct GraphNode {
+    codepoint: String,
+    character: String,
+    focus: bool,
+}
+
+#[derive(Serialize)]
+struct GraphEdge {
+    source: String,
+    target: String,
+    relation: String,
+    category: String,
+}
+
+#[derive(Serialize)]
+struct VariantGraph {
+    nodes: Vec<GraphNode>,
+    edges: Vec<GraphEdge>,
+}
+
+/// The variant family of one character as a graph: family members are nodes,
+/// variant_edges among those members are (undirected, de-duplicated) edges.
+#[tauri::command]
+fn variant_graph(db: State<Db>, query: String) -> Result<VariantGraph, String> {
+    let cp = normalize_query(&query)?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let members_json: Option<String> = conn
+        .query_row(
+            "SELECT family_members_json FROM variant_family WHERE codepoint = ?1",
+            params![cp],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let members: Vec<String> = match members_json {
+        Some(j) => serde_json::from_str(&j).map_err(|e| e.to_string())?,
+        None => vec![cp.clone()],
+    };
+    let member_set: std::collections::HashSet<&str> =
+        members.iter().map(String::as_str).collect();
+
+    let nodes = members
+        .iter()
+        .map(|m| GraphNode {
+            character: cp_to_char(m),
+            focus: *m == cp,
+            codepoint: m.clone(),
+        })
+        .collect();
+
+    let mut edges = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT source_codepoint, target_codepoint, relation, \
+                 relation_category FROM variant_edges WHERE source_codepoint = ?1",
+            )
+            .map_err(|e| e.to_string())?;
+        for m in &members {
+            let rows = stmt
+                .query_map(params![m], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            for row in rows {
+                let (s, t, relation, category) = row.map_err(|e| e.to_string())?;
+                if !member_set.contains(t.as_str()) {
+                    continue;
+                }
+                // de-duplicate to one undirected edge per (pair, relation)
+                let pair = if s < t {
+                    (s.clone(), t.clone(), relation.clone())
+                } else {
+                    (t.clone(), s.clone(), relation.clone())
+                };
+                if seen.insert(pair) {
+                    edges.push(GraphEdge {
+                        source: s,
+                        target: t,
+                        relation,
+                        category,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(VariantGraph { nodes, edges })
+}
+
 // ---------- home screen ----------
 
 fn daily_char(conn: &Connection, cp: &str) -> Result<DailyChar, String> {
@@ -531,17 +641,15 @@ fn daily_char(conn: &Connection, cp: &str) -> Result<DailyChar, String> {
         .optional()
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
-    let hunum: Option<String> = conn
+    let hunum: Option<HunumPair> = conn
         .query_row(
             "SELECT jahun, dokeum FROM character_hunum \
              WHERE codepoint = ?1 ORDER BY seq LIMIT 1",
             params![cp],
             |r| {
-                let jahun: Option<String> = r.get(0)?;
-                let dokeum: String = r.get(1)?;
-                Ok(match jahun {
-                    Some(j) => format!("{j} {dokeum}"),
-                    None => dokeum,
+                Ok(HunumPair {
+                    jahun: r.get(0)?,
+                    dokeum: r.get(1)?,
                 })
             },
         )
@@ -656,19 +764,210 @@ fn radical_chars(
         .map_err(|e| e.to_string())
 }
 
+// ---------- recognition ----------
+
+/// Recognize a glyph image on disk — used by the M1 headless gate and as a
+/// debug entry point. Heavy work (image decode + ONNX inference) runs off the
+/// UI thread via `spawn_blocking`.
+#[tauri::command]
+async fn recognize_image_file(
+    rec: State<'_, Arc<Recognizer>>,
+    path: String,
+    k: usize,
+) -> Result<Vec<Candidate>, String> {
+    let rec = rec.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let img = image::open(&path)
+            .map_err(|e| format!("image open: {e}"))?
+            .to_rgb8();
+        rec.recognize(&img, k)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Live recognition for the capture overlay — captures the screen square
+/// under the cursor and returns the top-`k` hanzi candidates. doc/39 M5.
+/// Cursor position is read in Rust (physical px); the overlay passes only the
+/// rectangle size in CSS pixels.
+#[tauri::command]
+async fn recognize_under_cursor(
+    app: tauri::AppHandle,
+    rec: State<'_, Arc<Recognizer>>,
+    size: f64,
+    k: usize,
+) -> Result<Vec<Candidate>, String> {
+    let rec = rec.inner().clone();
+    let cursor = app.cursor_position().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let crop = recognize::capture_square(cursor.x, cursor.y, size)?;
+        rec.recognize(&crop, k)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ---------- capture overlay ----------
+
+/// The monitor whose physical bounds contain the point (x, y).
+fn monitor_at(app: &tauri::AppHandle, x: f64, y: f64) -> Option<tauri::Monitor> {
+    let (px, py) = (x as i32, y as i32);
+    app.available_monitors().ok()?.into_iter().find(|m| {
+        let p = m.position();
+        let s = m.size();
+        px >= p.x
+            && px < p.x + s.width as i32
+            && py >= p.y
+            && py < p.y + s.height as i32
+    })
+}
+
+/// Open the full-screen transparent capture overlay on the monitor under the
+/// cursor. The window is created dynamically because its target monitor is
+/// only known at trigger time. Sized/positioned in physical pixels.
+/// Exclude a window from screen capture (`SetWindowDisplayAffinity` /
+/// `WDA_EXCLUDEFROMCAPTURE`). The overlay stays visible to the user but is
+/// invisible to `xcap`, so the live capture loop never grabs its own
+/// rectangle. doc/39 M7.
+#[cfg(windows)]
+fn exclude_from_capture(win: &tauri::WebviewWindow) -> Result<(), String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
+    };
+    let hwnd = HWND(win.hwnd().map_err(|e| e.to_string())?.0 as _);
+    unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) }
+        .map_err(|e| e.to_string())
+}
+
+/// Build and show the capture overlay. Shared by the toolbar command and the
+/// global hotkey. `async` so it runs off the main thread — building a
+/// WebView2 window from a synchronous (main-thread) command deadlocks.
+async fn open_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    eprintln!("[overlay] open requested");
+    if let Some(w) = app.get_webview_window("capture-overlay") {
+        eprintln!("[overlay] already open — focusing");
+        w.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let cursor = app.cursor_position().map_err(|e| e.to_string())?;
+    let monitor = monitor_at(&app, cursor.x, cursor.y)
+        .or(app.primary_monitor().map_err(|e| e.to_string())?)
+        .ok_or("연결된 모니터를 찾을 수 없습니다.")?;
+    let pos = *monitor.position();
+    let size = *monitor.size();
+    eprintln!(
+        "[overlay] cursor=({:.0},{:.0}) monitor pos=({},{}) size=({}x{})",
+        cursor.x, cursor.y, pos.x, pos.y, size.width, size.height
+    );
+
+    let win = WebviewWindowBuilder::new(
+        &app,
+        "capture-overlay",
+        WebviewUrl::App("overlay.html".into()),
+    )
+    .title("한자 인식")
+    .inner_size(size.width as f64, size.height as f64)
+    .position(pos.x as f64, pos.y as f64)
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .shadow(false)
+    .visible(false)
+    .build()
+    .map_err(|e| {
+        eprintln!("[overlay] build FAILED: {e}");
+        format!("overlay build: {e}")
+    })?;
+    eprintln!("[overlay] window built");
+
+    // hide the overlay from screen capture before it is ever shown
+    #[cfg(windows)]
+    if let Err(e) = exclude_from_capture(&win) {
+        eprintln!("[overlay] exclude_from_capture failed: {e}");
+    }
+
+    win.set_position(tauri::PhysicalPosition::new(pos.x, pos.y))
+        .map_err(|e| e.to_string())?;
+    win.set_size(tauri::PhysicalSize::new(size.width, size.height))
+        .map_err(|e| e.to_string())?;
+    win.show().map_err(|e| e.to_string())?;
+    win.set_focus().map_err(|e| e.to_string())?;
+    eprintln!("[overlay] shown + focused");
+    Ok(())
+}
+
+/// Toolbar / IPC entry point for opening the capture overlay.
+#[tauri::command]
+async fn open_capture_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    open_overlay(app).await
+}
+
+/// Close the capture overlay, if it is open.
+#[tauri::command]
+fn close_capture_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("capture-overlay") {
+        w.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// A candidate was picked in the overlay: close the overlay, bring the main
+/// window forward, and hand the codepoint to it for a dictionary lookup.
+#[tauri::command]
+fn focus_main_with_lookup(
+    app: tauri::AppHandle,
+    codepoint: String,
+) -> Result<(), String> {
+    if let Some(overlay) = app.get_webview_window("capture-overlay") {
+        let _ = overlay.close();
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.unminimize();
+        main.show().map_err(|e| e.to_string())?;
+        main.set_focus().map_err(|e| e.to_string())?;
+        main.emit("lookup-request", codepoint)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // ---------- app entry ----------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    use tauri_plugin_global_shortcut::ShortcutState;
+                    if event.state() == ShortcutState::Pressed {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(e) = open_overlay(app).await {
+                                eprintln!("[hotkey] open overlay failed: {e}");
+                            }
+                        });
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
-            let db_path = app
-                .path()
-                .resolve(
-                    "resources/canonical_v3.sqlite",
-                    tauri::path::BaseDirectory::Resource,
-                )
-                .expect("failed to resolve canonical_v3.sqlite resource path");
+            let resource = |name: &str| {
+                app.path()
+                    .resolve(
+                        format!("resources/{name}"),
+                        tauri::path::BaseDirectory::Resource,
+                    )
+                    .unwrap_or_else(|e| panic!("resolve resource {name}: {e}"))
+            };
+
+            let db_path = resource("canonical_v3.sqlite");
             let conn = Connection::open_with_flags(
                 &db_path,
                 OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -677,13 +976,43 @@ pub fn run() {
                 panic!("failed to open {}: {e}", db_path.display())
             });
             app.manage(Db(Mutex::new(conn)));
+
+            // SCER recognition engine (doc/39)
+            let recognizer = Recognizer::load(
+                &resource("scer_v4.onnx"),
+                &resource("scer_anchor_db_v20.npy"),
+                &resource("class_index.json"),
+            )
+            .unwrap_or_else(|e| panic!("failed to load SCER recognizer: {e}"));
+            app.manage(Arc::new(recognizer));
+
+            // global hotkey — Ctrl+Shift+H opens the capture overlay
+            {
+                use tauri_plugin_global_shortcut::{
+                    Code, GlobalShortcutExt, Modifiers, Shortcut,
+                };
+                let hotkey = Shortcut::new(
+                    Some(Modifiers::CONTROL | Modifiers::SHIFT),
+                    Code::KeyH,
+                );
+                if let Err(e) = app.global_shortcut().register(hotkey) {
+                    eprintln!("[setup] hotkey register failed: {e}");
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             lookup,
             search,
             home_data,
-            radical_chars
+            radical_chars,
+            variant_graph,
+            recognize_image_file,
+            recognize_under_cursor,
+            open_capture_overlay,
+            close_capture_overlay,
+            focus_main_with_lookup
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,13 +1,13 @@
 # Sinograph Dictionary — canonical_v3 기반 데스크톱 앱 (v1)
 
-작성일: 2026-05-17. 앱: `unihan_graph_viewer/`.
+작성일: 2026-05-17. 앱: `sinograph_explorer/`.
 DB: [37_CANONICAL_V3_APP_LAYER.md](37_CANONICAL_V3_APP_LAYER.md).
 
 ## 0. 배경
 
 canonical_v3.sqlite 가 단자 사전 백엔드로 정리 완료된 뒤, 그 위에 Windows
 데스크톱 사전 앱을 만들었다. 프로젝트 초창기의 Tauri 2.0 스캐폴드
-(`unihan_graph_viewer/`, 당시 Unihan txt 파싱) 를 재사용하되 백엔드를
+(`sinograph_explorer/`, 당시 Unihan txt 파싱) 를 재사용하되 백엔드를
 canonical_v3.sqlite 조회로 전면 재작성했다.
 
 ## 1. 스택
@@ -73,4 +73,4 @@ FTS 문법 충돌을 피하고, 각 hit 에 한국어 뜻 첫 항목을 gloss �
   (DB 리소스 해석·연결 정상).
 - 인터랙티브 확인 (조회·검색·네비게이션) 은 실행된 창에서 수동.
 
-실행: `cd unihan_graph_viewer && npm run tauri dev`.
+실행: `cd sinograph_explorer && npm run tauri dev`.

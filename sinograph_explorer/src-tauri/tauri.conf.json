@@ -29,7 +29,10 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/canonical_v3.sqlite"
+      "resources/canonical_v3.sqlite",
+      "resources/scer_v4.onnx",
+      "resources/scer_anchor_db_v20.npy",
+      "resources/class_index.json"
     ]
   }
 }

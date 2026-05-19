@@ -1,3 +1,3 @@
 fn main() {
-    unihan_graph_viewer_lib::run();
+    sinograph_explorer_lib::run();
 }

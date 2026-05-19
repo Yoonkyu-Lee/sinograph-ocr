@@ -151,10 +151,11 @@ def pretty(d: dict) -> None:
 
     print("  [발음]")
     if d["hunum"]:
-        shown = ", ".join(
-            (f"{h['jahun']} {h['dokeum']}" if h["jahun"] else h["dokeum"])
+        shown = "  ·  ".join(
+            (f"{h['jahun']}(훈) {h['dokeum']}(음)" if h["jahun"]
+             else f"{h['dokeum']}(음)")
             for h in d["hunum"])
-        print(f"  한국 훈음  : {shown}")
+        print(f"  {_pad('한국', 11)}: {shown}")
     for rt, label in READING_LABELS:
         vals = d["readings"].get(rt)
         if vals:

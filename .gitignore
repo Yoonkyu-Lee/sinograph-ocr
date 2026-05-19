@@ -43,7 +43,7 @@ command.md
 .claude/scheduled_tasks/
 
 # =============================================================
-# Node / Tauri (unihan_graph_viewer)
+# Node / Tauri
 # =============================================================
 node_modules/
 dist/

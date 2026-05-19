@@ -407,4 +407,4 @@ lab3/
 └── .venv/                         ← Python venv (pycryptodome, cryptography, sqlcipher3)
 ```
 
-doc, small_benchmark_test, Unihan, unihan_graph_viewer는 현재 e-hanja 사전 리버스 엔지니어링 작업과는 무관하므로 무시.
+doc, small_benchmark_test, Unihan, sinograph_explorer는 현재 e-hanja 사전 리버스 엔지니어링 작업과는 무관하므로 무시.

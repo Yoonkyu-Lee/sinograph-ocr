@@ -1,8 +1,17 @@
 import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import cytoscape from "cytoscape";
+import cola from "cytoscape-cola";
+
+cytoscape.use(cola);
+
+const CJK_FONT =
+  '"Noto Serif CJK KR", "Malgun Gothic", "Microsoft JhengHei", serif';
 
 const queryInput = document.querySelector("#query");
 const goButton = document.querySelector("#go");
+const recognizeButton = document.querySelector("#recognize");
 const homeLink = document.querySelector("#home-link");
 const crumbEl = document.querySelector("#crumb");
 const statusEl = document.querySelector("#status");
@@ -22,6 +31,7 @@ const RECENT_KEY = "sino.recent";
 let backStack = [];
 let currentCp = null;
 let homeData = null; // cached for the session
+let cy = null; // current cytoscape instance
 
 // ---------- helpers ----------
 
@@ -104,7 +114,7 @@ function renderHome(data) {
         <div class="daily-glyph">${escapeHtml(d.character)}</div>
         <div class="daily-info">
           <div class="daily-label">오늘의 한자</div>
-          ${d.hunum ? `<div class="daily-hunum">${escapeHtml(d.hunum)}</div>` : ""}
+          ${d.hunum ? `<div class="daily-hunum">${hunumPairHtml(d.hunum)}</div>` : ""}
           <div class="daily-gloss">${escapeHtml(d.gloss || "(뜻 정보 없음)")}</div>
           <div class="daily-meta">${escapeHtml(d.codepoint)}${
         d.primary_ids ? " · " + escapeHtml(d.primary_ids) : ""
@@ -216,25 +226,37 @@ function renderStructure(e) {
   return rows.length ? rows.join("") : `<p class="muted">구조 정보 없음</p>`;
 }
 
-function renderReadings(e) {
-  const rows = READING_LABELS.flatMap(([key, label]) => {
-    const vals = e.readings[key] || [];
-    if (!vals.length) return [];
-    return [`<div class="kv"><span class="k">${escapeHtml(label)}</span>
-      <span class="v">${escapeHtml(vals.join(" / "))}</span></div>`];
-  });
-  return rows.length ? rows.join("") : `<p class="muted">발음 정보 없음</p>`;
+// a small (훈) / (음) label, set like a lower-right subscript
+function hunumTag(label) {
+  return `<sub class="rk-tag">(${escapeHtml(label)})</sub>`;
 }
 
-function renderHunum(e) {
-  if (!e.hunum.length) return `<p class="muted">훈음 정보 없음</p>`;
-  const pairs = e.hunum
-    .map((h) => {
-      const jahun = h.jahun ? `<span class="jahun">${escapeHtml(h.jahun)}</span> ` : "";
-      return `<li>${jahun}<span class="dokeum">${escapeHtml(h.dokeum)}</span></li>`;
-    })
-    .join("");
-  return `<ul class="hunum-list">${pairs}</ul>`;
+// one 훈음 pair — 자훈(훈) 독음(음); 자훈 is omitted when absent
+function hunumPairHtml(h) {
+  const jahun = h.jahun
+    ? `<span class="jahun">${escapeHtml(h.jahun)}${hunumTag("훈")}</span> `
+    : "";
+  return `${jahun}<span class="dokeum">${escapeHtml(h.dokeum)}${hunumTag("음")}</span>`;
+}
+
+function renderReadings(e) {
+  const rows = [];
+  // Korean reading is the 훈음 pair, shown first
+  if (e.hunum && e.hunum.length) {
+    const pairs = e.hunum
+      .map(hunumPairHtml)
+      .join(`<span class="pair-sep"> · </span>`);
+    rows.push(`<div class="kv"><span class="k">한국</span>
+      <span class="v hunum-v">${pairs}</span></div>`);
+  }
+  for (const [key, label] of READING_LABELS) {
+    const vals = e.readings[key] || [];
+    if (vals.length) {
+      rows.push(`<div class="kv"><span class="k">${escapeHtml(label)}</span>
+        <span class="v">${escapeHtml(vals.join(" / "))}</span></div>`);
+    }
+  }
+  return rows.length ? rows.join("") : `<p class="muted">발음 정보 없음</p>`;
 }
 
 function renderMeanings(e) {
@@ -265,7 +287,7 @@ function renderVariants(e) {
     edges
       .map(
         (v) => `<span class="edge">${hanjaLink(v.target_codepoint, v.target_character)}
-        <span class="rel">${escapeHtml(v.relation.replace(/^ehanja_/, ""))}</span></span>`
+        <span class="rel">${escapeHtml(relationKo(v.relation))}</span></span>`
       )
       .join("");
   const variantEdges = e.variants.filter((v) => v.category === "variant");
@@ -277,6 +299,10 @@ function renderVariants(e) {
   if (semanticEdges.length) {
     blocks.push(`<div class="kv"><span class="k">관련어</span>
       <span class="v chip-row">${edgeLine(semanticEdges)}</span></div>`);
+  }
+  if (e.family && e.family.size > 1) {
+    blocks.push(`<div class="graph-btn-wrap">
+      <button id="graph-toggle" class="graph-btn">관계도 그래프 ▾</button></div>`);
   }
   return blocks.length ? blocks.join("") : `<p class="muted">이체자 정보 없음</p>`;
 }
@@ -304,7 +330,163 @@ function renderGrades(e) {
   return rows.length ? rows.join("") : `<p class="muted">급수 정보 없음</p>`;
 }
 
+// ---- variant graph (cytoscape) ----
+
+const EDGE_BUCKETS = [
+  { test: /^(simplified|traditional)$/, color: "#b65e16" },
+  {
+    test: /^(semantic|specialized_semantic|z_variants|spoofing|kanjidic2_resolved)$/,
+    color: "#255f9c",
+  },
+];
+
+function edgeColor(relation) {
+  for (const b of EDGE_BUCKETS) if (b.test.test(relation)) return b.color;
+  return "#2a7d2e";
+}
+
+// variant relation -> Korean label
+const RELATION_KO = {
+  traditional: "번체",
+  simplified: "간체",
+  z_variants: "이체(Z)",
+  spoofing: "혼동자",
+  semantic: "통용자",
+  specialized_semantic: "부분통용",
+  kanjidic2_resolved: "일본이체",
+  ehanja_dongja: "동자",
+  ehanja_bonja: "본자",
+  ehanja_sokja: "속자",
+  ehanja_yakja: "약자",
+  ehanja_goja: "고자",
+  ehanja_waja: "와자",
+  ehanja_tongja: "통자",
+  ehanja_simple: "간체",
+  ehanja_hDup: "중복자",
+  ehanja_kanji: "일본자",
+  ehanja_synonyms: "유의자",
+  ehanja_opposites: "반의자",
+  ehanja_alt_forms: "이표기",
+};
+
+function relationKo(relation) {
+  return RELATION_KO[relation] || relation.replace(/^ehanja_/, "");
+}
+
+function destroyGraph() {
+  if (cy) {
+    cy.destroy();
+    cy = null;
+  }
+}
+
+async function toggleGraph(codepoint) {
+  const section = document.querySelector("#graph-section");
+  const toggle = document.querySelector("#graph-toggle");
+  if (!section) return;
+  if (cy) {
+    destroyGraph();
+    section.classList.add("hidden");
+    if (toggle) toggle.textContent = "관계도 그래프 ▾";
+    return;
+  }
+  try {
+    const g = await invoke("variant_graph", { query: codepoint });
+    const elements = [
+      ...g.nodes.map((n) => ({
+        data: { id: n.codepoint, label: n.character, focus: n.focus ? "y" : "n" },
+      })),
+      ...g.edges.map((ed) => ({
+        data: {
+          id: `${ed.source}|${ed.target}|${ed.relation}`,
+          source: ed.source,
+          target: ed.target,
+          label: relationKo(ed.relation),
+          color: edgeColor(ed.relation),
+        },
+      })),
+    ];
+    section.classList.remove("hidden");
+    cy = cytoscape({
+      container: document.querySelector("#cy"),
+      elements,
+      layout: {
+        // cola — a continuous physics simulation. With `infinite: true` it
+        // never stops, so dragging a node makes the connected nodes follow
+        // and the whole graph keeps settling, like a living structure.
+        // `avoidOverlap` + `nodeSpacing` guarantee a minimum node distance.
+        name: "cola",
+        animate: true,
+        infinite: true,
+        fit: false,
+        randomize: true,
+        avoidOverlap: true,
+        nodeSpacing: 14,
+        edgeLength: 130,
+        handleDisconnected: true,
+      },
+      style: [
+        {
+          selector: "node",
+          style: {
+            "background-color": "#e7efe8",
+            "border-color": "#5a7267",
+            "border-width": 2,
+            label: "data(label)",
+            "font-family": CJK_FONT,
+            "font-size": 22,
+            "text-valign": "center",
+            "text-halign": "center",
+            color: "#23281f",
+            width: 46,
+            height: 46,
+          },
+        },
+        {
+          selector: 'node[focus = "y"]',
+          style: {
+            "background-color": "#335c4a",
+            "border-color": "#284838",
+            color: "#ffffff",
+            width: 58,
+            height: 58,
+            "font-size": 28,
+          },
+        },
+        {
+          selector: "edge",
+          style: {
+            "line-color": "data(color)",
+            width: 2.5,
+            "curve-style": "bezier",
+            label: "data(label)",
+            "font-family": CJK_FONT,
+            "font-size": 11,
+            // label color follows the edge color; no background (transparent)
+            color: "data(color)",
+            "text-background-opacity": 0,
+            // run the label parallel to the edge and lift it off the line
+            "text-rotation": "autorotate",
+            "text-margin-y": -7,
+          },
+        },
+      ],
+    });
+    cy.on("tap", "node", (ev) => openEntry(ev.target.id()));
+    if (toggle) toggle.textContent = "관계도 그래프 ▴";
+    section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // frame the graph once after the initial settle (infinite layout never
+    // emits layoutstop, so fit manually instead of fit: true)
+    setTimeout(() => {
+      if (cy) cy.fit(undefined, 50);
+    }, 700);
+  } catch (err) {
+    setStatus(String(err), true);
+  }
+}
+
 function renderEntry(e) {
+  destroyGraph();
   entryEl.innerHTML = `
     <div class="hero">
       <div class="hero-glyph">${escapeHtml(e.character)}</div>
@@ -316,13 +498,19 @@ function renderEntry(e) {
     <div class="panel-grid">
       ${panel("구조", renderStructure(e))}
       ${panel("발음", renderReadings(e))}
-      ${panel("훈음 (한국)", renderHunum(e))}
       ${panel("뜻", renderMeanings(e))}
       ${panel("이체자", renderVariants(e))}
       ${panel("급수", renderGrades(e))}
     </div>
+    <section id="graph-section" class="graph-section hidden">
+      <div class="graph-head">이체자 관계도
+        <span class="muted">— 노드 클릭 시 그 글자로 이동</span></div>
+      <div id="cy" class="cy"></div>
+    </section>
   `;
   showView("entry");
+  const toggle = document.querySelector("#graph-toggle");
+  if (toggle) toggle.addEventListener("click", () => toggleGraph(e.codepoint));
 }
 
 function renderResults(label, hits) {
@@ -407,6 +595,9 @@ queryInput.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") submitQuery();
 });
 homeLink.addEventListener("click", loadHome);
+recognizeButton.addEventListener("click", () => {
+  invoke("open_capture_overlay").catch((e) => setStatus(String(e), true));
+});
 
 document.addEventListener("click", (ev) => {
   const rad = ev.target.closest(".radical-cell");
@@ -416,6 +607,11 @@ document.addEventListener("click", (ev) => {
   }
   const nav = ev.target.closest(".hanja-link, .result-item, .nav-card");
   if (nav && nav.dataset.cp) openEntry(nav.dataset.cp);
+});
+
+// a candidate picked in the capture overlay -> open that entry
+listen("lookup-request", (ev) => {
+  if (ev.payload) openEntry(String(ev.payload));
 });
 
 // initial view — the home screen

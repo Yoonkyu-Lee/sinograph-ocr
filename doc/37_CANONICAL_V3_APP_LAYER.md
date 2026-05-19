@@ -163,7 +163,7 @@ python sinograph_canonical_v3/scripts/64_validate_canonical_v3.py
 - 단어/숙어 레이어 (CEDICT·MOE 사전)
 
 canonical_v3 는 단자(單字) 사전 앱 백엔드로 정리 완료. 다음은
-`unihan_graph_viewer` (Tauri 2 + Rust) 를 이 DB 위에 재작성하는 phase.
+`sinograph_explorer` (Tauri 2 + Rust) 를 이 DB 위에 재작성하는 phase.
 
 ## 8. 일본 발음 가나 재병합 (`67_merge_japanese.py`)
 

@@ -3,7 +3,7 @@
 canonical_v3 한자 데이터베이스 위에서 동작하는 Tauri 2 데스크톱 단자(單字)
 사전 앱.
 
-> 디렉토리명 `unihan_graph_viewer/` 는 프로젝트 초창기 (Unihan-only 시절)
+> 디렉토리명 `sinograph_explorer/` 는 프로젝트 초창기 (Unihan-only 시절)
 > 이름이 남은 것 — 현재 앱은 canonical_v3.sqlite 기반이다.
 
 ## 기능 (v1)
@@ -35,7 +35,7 @@ limit)` (FTS5 역검색). DB 는 시작 시 read-only 로 열어 managed state �
 프로젝트 루트에서:
 
 ```powershell
-cd .\lab3\unihan_graph_viewer
+cd .\lab3\sinograph_explorer
 npm install
 npm run tauri dev
 ```

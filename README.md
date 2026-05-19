@@ -196,7 +196,7 @@ sinograph-explorer/
 │       ├── recompile_edgetpu_with_summary.sh   ← WSL TPU compile cache split proof
 │       └── run_stage{1,2,3}.sh        ← single-command demo wrappers
 ├── test/                              ← 38 hand-picked CJK test images
-└── unihan_graph_viewer/               ← (Tauri) auxiliary character explorer
+└── sinograph_explorer/               ← (Tauri) auxiliary character explorer
 ```
 
 ---
