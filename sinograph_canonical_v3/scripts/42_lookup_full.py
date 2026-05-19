@@ -109,6 +109,13 @@ def fetch(db: sqlite3.Connection, cp: str) -> dict:
         edges.append({"target": tch, "target_codepoint": tcp,
                       "scope": scope, "relation": rel, "category": cat})
     out["variant_edges"] = edges
+
+    gcols = ["kr_grade", "kr_education", "cn_tonggyong", "jp_grade",
+             "jp_freq", "jp_jlpt", "unihan_core"]
+    grow = db.execute(
+        "SELECT " + ",".join(gcols) + " FROM character_grades "
+        "WHERE codepoint=?", (cp,)).fetchone()
+    out["grades"] = dict(zip(gcols, grow)) if grow else None
     return out
 
 
@@ -182,6 +189,28 @@ def pretty(d: dict) -> None:
         print(f"  관련어     : {rels}")
     if not has_family and not d["variant_edges"]:
         print("  (이체자 정보 없음)")
+
+    print("  [급수]")
+    g = d.get("grades")
+    if g:
+        parts = []
+        if g.get("kr_grade"):
+            parts.append(f"한자검정 {g['kr_grade']}")
+        if g.get("kr_education"):
+            parts.append(f"교육용 {g['kr_education']}")
+        if g.get("cn_tonggyong") is not None:
+            parts.append(f"통용규범 {g['cn_tonggyong']}급")
+        if g.get("jp_grade") is not None:
+            parts.append(f"일본학년 {g['jp_grade']}")
+        if g.get("jp_freq") is not None:
+            parts.append(f"일본빈도 {g['jp_freq']}위")
+        if g.get("jp_jlpt") is not None:
+            parts.append(f"JLPT {g['jp_jlpt']}급")
+        if g.get("unihan_core"):
+            parts.append(f"Unihan core {g['unihan_core']}")
+        print("  " + "  /  ".join(parts) if parts else "  (급수 정보 없음)")
+    else:
+        print("  (급수 정보 없음)")
 
 
 def main() -> None:

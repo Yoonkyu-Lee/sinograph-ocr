@@ -24,7 +24,7 @@ Tauri 뷰어 앱 작성 전에 끝냈다. 앱 코드를 짠 뒤 스키마를 바
 
 ## 2. 최종 스키마 — `canonical_v3.sqlite` (94 MB)
 
-테이블 10개 + VIEW 1개.
+테이블 11개 + VIEW 1개.
 
 | 테이블 | rows | 내용 |
 |---|---:|---|
@@ -36,6 +36,7 @@ Tauri 뷰어 앱 작성 전에 끝냈다. 앱 코드를 짠 뒤 스키마를 바
 | `character_meanings` | 195,221 | codepoint / language(en,ko) / value |
 | `variant_edges` | 88,704 | source·target / relation / **relation_category** / scope / sources_json / support_count |
 | `variant_family` | 103,006 | codepoint / family_id / component_size / family_members_json / representative |
+| `character_grades` | 20,746 | codepoint / kr_grade / kr_education / cn_tonggyong / jp_grade / jp_freq / jp_jlpt / unihan_core — **급수** |
 | `radicals` | 214 | radical_idx / char / name_ko / strokes |
 | `fts_search` | 80,020 | FTS5 — codepoint / hanja / reading / hunum / meaning |
 | `character_summary` (VIEW) | 103,046 | codepoint / character / block / radical_idx / total_strokes / residual_strokes / primary_ids / ids_top_idc |
@@ -53,6 +54,11 @@ Tauri 뷰어 앱 작성 전에 끝냈다. 앱 코드를 짠 뒤 스키마를 바
 - `variant_edges.relation_category` — `variant` (같은 글자: traditional /
   simplified / dongja / sokja … 18종) / `semantic` (다른 글자의 유의·반의:
   ehanja_synonyms / ehanja_opposites).
+- `character_grades` — 급수(grade/level) 를 4개 표준에서 모음: 한국 한자검정
+  (`kr_grade`) + 한문 교육용 (`kr_education`), 중국 통용규범 (`cn_tonggyong`
+  1·2·3급), 일본 KANJIDIC2 (`jp_grade`/`jp_freq`/`jp_jlpt`), Unihan
+  `kUnihanCore2020` 지역 태그 (`unihan_core`). universe 의 20.1% — 글자가
+  얼마나 대중적인지 가늠하는 용도. 빌더 `68_build_grades.py`.
 
 ## 3. 앱이 쓸 쿼리 패턴
 
@@ -94,6 +100,7 @@ python sinograph_canonical_v3/scripts/60_init_canonical_v3.py
 python sinograph_canonical_v3/scripts/61_migrate_lexical_from_v2.py
 python sinograph_canonical_v3/scripts/62_merge_hunum.py
 python sinograph_canonical_v3/scripts/67_merge_japanese.py
+python sinograph_canonical_v3/scripts/68_build_grades.py
 python sinograph_canonical_v3/scripts/65_build_radicals.py
 python sinograph_canonical_v3/scripts/66_build_app_layer.py
 python sinograph_canonical_v3/scripts/63_coverage_report.py
@@ -106,6 +113,7 @@ python sinograph_canonical_v3/scripts/64_validate_canonical_v3.py
 | 61 | v2 → readings(중·광·월 3종) / meanings / variant_edges(+category) / variant_family |
 | 62 | e-hanja getHunum + v2 독음 → `character_hunum` (멱등) |
 | 67 | KANJIDIC2 + Unihan kJapanese → `onyomi` / `kunyomi` 가나 재병합 (멱등) — §8 |
+| 68 | 4개 소스 → `character_grades` 급수 테이블 (멱등) |
 | 65 | `radicals` 테이블 |
 | 66 | `character_summary` VIEW + `fts_search` FTS5 |
 | 63 | 커버리지 리포트 → `out/canonical_v3_coverage.json` |

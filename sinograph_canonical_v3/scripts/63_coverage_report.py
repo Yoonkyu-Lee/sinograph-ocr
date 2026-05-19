@@ -103,6 +103,22 @@ def main() -> None:
             ("family member 2+", cp_count(
                 "SELECT count(*) FROM variant_family WHERE component_size>1")),
         ]),
+        ("급수 (grades)", [
+            ("any 급수", cp_count(
+                "SELECT count(*) FROM character_grades")),
+            ("한자검정 (kr_grade)", cp_count(
+                "SELECT count(*) FROM character_grades "
+                "WHERE kr_grade IS NOT NULL")),
+            ("통용규범 (cn_tonggyong)", cp_count(
+                "SELECT count(*) FROM character_grades "
+                "WHERE cn_tonggyong IS NOT NULL")),
+            ("일본 학년 (jp_grade)", cp_count(
+                "SELECT count(*) FROM character_grades "
+                "WHERE jp_grade IS NOT NULL")),
+            ("Unihan core", cp_count(
+                "SELECT count(*) FROM character_grades "
+                "WHERE unihan_core IS NOT NULL")),
+        ]),
     ]
 
     report = {"universe": n, "groups": {}}
@@ -133,6 +149,7 @@ def main() -> None:
         "character_meanings": rows("character_meanings"),
         "variant_edges": rows("variant_edges"),
         "variant_family": rows("variant_family"),
+        "character_grades": rows("character_grades"),
         "radicals": rows("radicals"),
         "fts_search": rows("fts_search"),
     }

@@ -22,7 +22,7 @@ canonical_v3 는 처음에 한자 인식 모델의 학습 보조 레이블용으
 
 - `out/ids_merged.sqlite` (43 MB) — IDS 병합 중간물. `characters_ids` +
   `characters_structure` 2 테이블. Stage 1-2 산출.
-- `out/canonical_v3.sqlite` (94 MB) — **최종 사전 DB**. 아래 10 테이블 +
+- `out/canonical_v3.sqlite` (~99 MB) — **최종 사전 DB**. 아래 11 테이블 +
   1 VIEW. Stage 3-4 산출.
 
 빌드는 4 스테이지 — 전부 ✅ 완료:
@@ -46,6 +46,7 @@ canonical_v3 는 처음에 한자 인식 모델의 학습 보조 레이블용으
 | `character_meanings` | 195,221 | 뜻 (en / ko) | 3 |
 | `variant_edges` | 88,704 | 이체자 edge + `relation_category` | 3-4 |
 | `variant_family` | 103,006 | 이체자 family (enriched 그래프) | 3 |
+| `character_grades` | 20,746 | 급수 — 한국 한자검정·교육용 / 중국 통용규범 / 일본 학년·빈도·JLPT / Unihan core | 4 |
 | `radicals` | 214 | 부수표 — idx / 부수자 / 한글명 / 획수 | 4 |
 | `fts_search` | 80,020 | FTS5 역검색 (뜻·발음·훈 → 한자) | 4 |
 | `character_summary` (VIEW) | 103,046 | 단일 글자 요약 fetch | 4 |

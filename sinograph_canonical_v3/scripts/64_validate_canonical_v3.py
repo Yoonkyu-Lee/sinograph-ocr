@@ -141,8 +141,8 @@ def main() -> None:
           f"{rad_n - rad_range} out of range")
 
     # C9 — no orphan lexical / hunum rows
-    for t in ("character_readings", "character_hunum",
-              "character_meanings", "variant_family"):
+    for t in ("character_readings", "character_hunum", "character_meanings",
+              "variant_family", "character_grades"):
         orphan = scalar(
             f"SELECT count(*) FROM {t} WHERE codepoint NOT IN "
             "(SELECT codepoint FROM characters_ids)")
