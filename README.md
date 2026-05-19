@@ -1,4 +1,4 @@
-# Sinograph Explorer — Universal CJK OCR for the Edge
+# Sinograph OCR Engine— Universal CJK OCR for the Edge
 
 > **TL;DR** — A 98,169-class Chinese / Japanese / Korean ideograph recognizer
 > that runs in **11 MB of INT8 weights at 25 ms/char on a Raspberry Pi 5
