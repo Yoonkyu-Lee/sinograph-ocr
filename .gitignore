@@ -139,31 +139,31 @@ db_src/cjkvi_ids/ids_primary.jsonl
 # sinograph_canonical — 빌드 산출물 (SQLite, JSONL)
 # scripts/schema/staging/tests 는 commit, out 만 ignore
 # =============================================================
-sinograph_canonical_v1/out/
-sinograph_canonical_v2/out/
 sinograph_canonical_v3/out/
 **/staging/
 
 # =============================================================
 # synth_engine — 생성 데이터셋 (수십 GB)
 # =============================================================
-synth_engine_v1/out/
-synth_engine_v2/out/
 synth_engine_v3/out/
-synth_engine_v2/samples/
 **/test_img/
 
 # =============================================================
 # train_engine — 모델 체크포인트 / 학습 산출물
 # =============================================================
-train_engine_v1/out/
-train_engine_v2/out/
 train_engine_v3/out/
 train_engine_v4/out/
 *.pt
 *.pth
 *.ckpt
 *.safetensors
+
+# =============================================================
+# archive/ — superseded v1/v2 engines (staging/test_img/tmp_smoke
+# are already covered by the **/ rules above)
+# =============================================================
+archive/*/out/
+archive/synth_engine_v2/samples/
 
 # =============================================================
 # deploy_pi — 배포용 모델 (ONNX / TFLite / Keras / saved_model)

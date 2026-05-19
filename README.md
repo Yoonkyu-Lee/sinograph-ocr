@@ -155,49 +155,46 @@ TPU op coverage, end-to-end latency). The full record is in
 ## Repository Layout
 
 ```
-sinograph-explorer/
+sinograph-ocr/
 ├── README.md                          ← you are here
 ├── CLAUDE.md                          ← project rules / conventions
-├── doc/                               ← phase-by-phase design docs (33 files)
-│   ├── 18_FINAL_PRESENTATION.md
-│   ├── 24_DEPLOY_BLOCKERS_AND_V4_PLAN.md     ← why v3 → v4
-│   ├── 28_PHASE2_SCER_PLAN.md                ← architecture spec
-│   ├── 32_PHASE3_4_REDO_RESULTS.md           ← deploy verification
-│   └── 33_DEMO.md                            ← demo run sheet
+├── doc/                               ← phase-by-phase design docs (00–39)
+│   └── INDEX.md                       ← thematic index of all 40 docs
 ├── db_mining/                         ← Unihan / IDS / e-hanja / KanjiVG mining
 ├── db_src/                            ← raw character source data (gitignored)
-├── sinograph_canonical_v[1-3]/        ← canonicalized SQLite DB build pipelines
-├── synth_engine_v[1-3]/               ← synthetic-data generators
-│   └── synth_engine_v3/               ← final: 102 K classes × 200 samples = 20.4 M
-├── train_engine_v[1-4]/
-│   └── train_engine_v4/               ← SCER (this is the production model)
-│       ├── modules/
-│       │   ├── model.py               ← SCERModel, multi-head + embedding
-│       │   ├── arcface.py             ← ArcMarginProduct (additive margin)
-│       │   ├── train_loop.py
-│       │   └── keras_scer.py          ← PT → Keras port
-│       └── scripts/
-│           ├── 50_train_scer.py
-│           ├── 51_build_anchor_db.py
-│           ├── 40_port_pytorch_to_keras.py
-│           ├── 41_export_keras_tflite.py     ← INT8 quantize
-│           ├── 43_eval_int8_accuracy.py
-│           └── 52_eval_scer_pipeline.py
+├── sinograph_canonical_v3/            ← canonical SQLite DB build pipeline
+├── synth_engine_v3/                   ← synthetic-data generator (102 K classes × 200 = 20.4 M)
+├── train_engine_v3/                   ← multi-head ResNet-18 baseline (frozen — v4 warm-start)
+├── train_engine_v4/                   ← SCER — the production model
+│   ├── modules/
+│   │   ├── model.py                   ← SCERModel, multi-head + embedding
+│   │   ├── arcface.py                 ← ArcMarginProduct (additive margin)
+│   │   ├── train_loop.py
+│   │   └── keras_scer.py              ← PT → Keras port
+│   └── scripts/
+│       ├── 50_train_scer.py
+│       ├── 51_build_anchor_db.py
+│       ├── 40_port_pytorch_to_keras.py
+│       ├── 41_export_keras_tflite.py  ← INT8 quantize
+│       └── 43_eval_int8_accuracy.py
 ├── deploy_pi/
 │   ├── export/                        ← model artifacts (TFLite, ONNX, anchors)
-│   ├── infer_pi.py                    ← Pi reference inference
-│   ├── infer_pi_chars.py              ← 20 PNG sweep
+│   ├── infer_pi_chars.py              ← Pi reference inference
 │   ├── eval_pi_scer.py                ← 1000 val-pack accuracy
 │   ├── bench_scer_pi.py               ← latency micro-bench
 │   └── demo/                          ← live demo infrastructure
-│       ├── ocr_adapters.py            ← Tesseract / EasyOCR / Paddle / cnocr / Manga / GVision adapters
-│       ├── bench_cpu_three.py         ← unified CPU bench (commodity vs v3 vs v4)
-│       ├── capture_predict.py         ← Pi Camera live capture + auto-crop + v4 inference
-│       ├── recompile_edgetpu_with_summary.sh   ← WSL TPU compile cache split proof
+│       ├── ocr_adapters.py            ← Tesseract / EasyOCR / Paddle / cnocr / Manga / GVision
+│       ├── capture_predict.py         ← Pi Camera live capture + auto-crop + inference
 │       └── run_stage{1,2,3}.sh        ← single-command demo wrappers
 ├── test/                              ← 38 hand-picked CJK test images
-└── sinograph_explorer/               ← (Tauri) auxiliary character explorer
+├── archive/                           ← superseded v1 / v2 engines (see archive/README.md)
+└── sinograph_explorer/                ← desktop dictionary app — git submodule (own repo)
 ```
+
+The ML pipeline (corpus → training → deployment) is complete. The top level
+holds only the live pipeline; superseded `v1` / `v2` engines live in
+`archive/`. The desktop dictionary app was split into its own repository and
+is referenced here as a submodule — clone with `git clone --recursive`.
 
 ---
 
@@ -262,7 +259,9 @@ ssh -t pi "~/ece479/demo/run_stage3.sh"   # Pi Camera live capture loop
 
 ## Documentation Index
 
-The full design record is in [`doc/`](doc/). Highlights for reviewers:
+The full design record is in [`doc/`](doc/) — a 40-document chronological
+work-log. [`doc/INDEX.md`](doc/INDEX.md) is the thematic map of all of them.
+Highlights for reviewers:
 
 - [`doc/18_FINAL_PRESENTATION.md`](doc/18_FINAL_PRESENTATION.md) — project overview, motivation, narrative
 - [`doc/19_TRAIN_ENGINE_V3_PLAN.md`](doc/19_TRAIN_ENGINE_V3_PLAN.md) — multi-head ResNet-18 baseline
