@@ -1,71 +1,34 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sinograph Explorer</title>
+    <title>Sinograph Dictionary</title>
     <script type="module" src="/src/main.js" defer></script>
   </head>
   <body>
     <div id="app">
-      <header class="page-header">
-        <div>
-          <h1>Sinograph Explorer</h1>
-          <p class="subtitle">
-            Variant-aware desktop viewer for Unihan metadata and graph exploration.
-          </p>
-        </div>
+      <header class="app-header">
+        <h1 id="home-link" title="홈으로">Sinograph Dictionary</h1>
+        <span class="app-sub">canonical_v3 — 한자 단자 사전</span>
       </header>
 
-      <main class="layout">
-        <section class="panel controls">
-          <label for="character-input">Character</label>
-          <div class="row">
-            <input id="character-input" value="鑑" />
-            <button id="lookup-button">Lookup</button>
-          </div>
-          <p class="hint">
-            Type one character, then inspect its direct metadata and its full connected variant component.
-          </p>
-        </section>
+      <div class="searchbar">
+        <input
+          id="query"
+          type="text"
+          placeholder="한자 한 글자, 또는 뜻·발음 (예: 鑑 · 거울 · mirror · U+9451)"
+          autocomplete="off"
+        />
+        <button id="go">검색</button>
+      </div>
 
-        <section class="workspace-grid">
-          <div class="sidebar-stack">
-            <section class="panel">
-              <h2>Current Character</h2>
-              <div id="summary-panel" class="info-block">
-                Press Lookup to load character metadata.
-              </div>
-            </section>
+      <nav id="crumb" class="crumb hidden"></nav>
+      <div id="status" class="status"></div>
 
-            <section class="panel">
-              <h2>Direct Variant Relations</h2>
-              <div id="relations-panel" class="info-block">
-                Direct variant fields for the recognized character will appear here.
-              </div>
-            </section>
-          </div>
-
-          <section class="panel graph-panel">
-            <div class="panel-header">
-              <div>
-                <h2>Variant Graph</h2>
-                <p class="panel-subtitle">
-                  BFS over the undirected variant graph. The highlighted node is the recognized character.
-                </p>
-              </div>
-            </div>
-            <div id="graph-panel" class="graph-canvas">
-              <div class="graph-empty">Lookup a character to render the variant graph.</div>
-            </div>
-          </section>
-        </section>
-
-        <section class="panel">
-          <h2>Raw Response</h2>
-          <pre id="raw-json">Waiting for backend response.</pre>
-        </section>
-      </main>
+      <section id="home" class="home"></section>
+      <section id="results" class="results hidden"></section>
+      <section id="entry" class="entry hidden"></section>
     </div>
   </body>
 </html>

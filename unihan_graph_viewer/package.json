@@ -1,7 +1,7 @@
 {
-  "name": "unihan-graph-viewer",
+  "name": "sinograph-dictionary",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
@@ -10,9 +10,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.5.0",
-    "cytoscape": "^3.33.1",
-    "cytoscape-node-html-label": "^1.2.2"
+    "@tauri-apps/api": "^2.5.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.5.0",
