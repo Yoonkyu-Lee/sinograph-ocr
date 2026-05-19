@@ -1,0 +1,3 @@
+[submodule "sinograph_explorer"]
+	path = sinograph_explorer
+	url = git@github.com:Yoonkyu-Lee/sinograph-explorer.git
