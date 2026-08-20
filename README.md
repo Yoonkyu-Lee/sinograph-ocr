@@ -6,7 +6,7 @@
 > training on RTX 4080 → Keras port → TFLite INT8 quantization → Edge TPU
 > compile → live inference on a Raspberry Pi 5 + Pi Camera Module 3.
 
-ECE 479 *Hardware for Cognitive Computing* (UIUC, Spring 2026), Lab 3 final
+ECE 479 *IoT & Cognitive Computing* (UIUC, Spring 2026), Lab 3 final
 project. Maintained by **Yoonkyu Lee** (`yoonguri21@gmail.com`).
 
 ---
